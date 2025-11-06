@@ -55,7 +55,6 @@ class _WebViewPageState extends State<WebViewPage>
     super.initState();
     urlController.text = currentUrl;
 
-    // Initialize fade animation
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -102,16 +101,35 @@ class _WebViewPageState extends State<WebViewPage>
     });
 
     try {
-      final result = await PhishingDetector.analyzePage(webViewController!, url);
+      final result = await PhishingDetector.analyzePage(
+        webViewController!,
+        url,
+      );
 
       setState(() {
         phishingResult = result;
         isCheckingPhishing = false;
       });
 
-      // Show warning dialog if phishing detected
+      if (result.riskItems.isNotEmpty) {
+        await PhishingDetector.highlightRiskyElements(
+          webViewController!,
+          result.riskItems,
+        );
+      }
+
       if (result.isPhishing && mounted) {
-        showPhishingWarning(result);
+        final riskLevelPriority = {
+          'low': 1,
+          'medium': 2,
+          'high': 3,
+          'critical': 4,
+        };
+        final priority = riskLevelPriority[result.riskLevel.toLowerCase()] ?? 0;
+
+        if (priority >= 2) {
+          showPhishingWarning(result);
+        }
       }
     } catch (e) {
       setState(() {
@@ -157,10 +175,14 @@ class _WebViewPageState extends State<WebViewPage>
         onSubmitUrl: (value) {
           loadUrl(value);
         },
+        onSecurityIconTap: () {
+          if (phishingResult != null) {
+            showPhishingWarning(phishingResult!);
+          }
+        },
       ),
       body: Column(
         children: [
-          // Loading progress bar
           if (loadingProgress < 1.0)
             TweenAnimationBuilder<double>(
               duration: const Duration(milliseconds: 200),
@@ -176,7 +198,7 @@ class _WebViewPageState extends State<WebViewPage>
                 );
               },
             ),
-          // WebView with fade animation
+
           Expanded(
             child: FadeTransition(
               opacity: _fadeAnimation,
@@ -191,14 +213,13 @@ class _WebViewPageState extends State<WebViewPage>
                 ),
                 onWebViewCreated: (controller) {
                   webViewController = controller;
-                  _fadeController.forward(); // Initial fade in
+                  _fadeController.forward();
                 },
                 shouldOverrideUrlLoading: (controller, navigationAction) async {
-                  // Allow all navigation to proceed
                   return NavigationActionPolicy.ALLOW;
                 },
-                onLoadStart: (controller, url) {
-                  _fadeController.reverse(); // Fade out
+                onLoadStart: (controller, url) async {
+                  _fadeController.reverse();
                   setState(() {
                     loadingProgress = 0;
                     if (url != null) {
@@ -206,16 +227,17 @@ class _WebViewPageState extends State<WebViewPage>
                     }
                   });
                   updateNavigationButtons();
+
+                  await PhishingDetector.clearHighlights(controller);
                 },
                 onLoadStop: (controller, url) async {
                   setState(() {
                     loadingProgress = 1.0;
                   });
-                  _fadeController.forward(); // Fade in
+                  _fadeController.forward();
                   updateNavigationButtons();
                   pullToRefreshController?.endRefreshing();
 
-                  // Check for phishing when page finishes loading
                   if (url != null) {
                     checkPageForPhishing(url.toString());
                   }

@@ -4,11 +4,13 @@ import '../services/phishing_detector.dart';
 class SecurityIcon extends StatefulWidget {
   final PhishingResult? phishingResult;
   final Color defaultColor;
+  final VoidCallback? onTap;
 
   const SecurityIcon({
     super.key,
     this.phishingResult,
     required this.defaultColor,
+    this.onTap,
   });
 
   @override
@@ -19,7 +21,6 @@ class _SecurityIconState extends State<SecurityIcon>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
-  late Animation<double> _rotationAnimation;
 
   @override
   void initState() {
@@ -31,28 +32,25 @@ class _SecurityIconState extends State<SecurityIcon>
 
     _scaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 1.3).chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween(
+          begin: 1.0,
+          end: 1.3,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 50,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 1.3, end: 1.0).chain(CurveTween(curve: Curves.easeIn)),
+        tween: Tween(
+          begin: 1.3,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeIn)),
         weight: 50,
       ),
     ]).animate(_controller);
-
-    _rotationAnimation = Tween<double>(
-      begin: 0.0,
-      end: 0.1,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.elasticOut,
-    ));
   }
 
   @override
   void didUpdateWidget(SecurityIcon oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Trigger animation when phishing result changes
     if (oldWidget.phishingResult != widget.phishingResult &&
         widget.phishingResult != null) {
       _controller.forward(from: 0.0);
@@ -86,44 +84,43 @@ class _SecurityIconState extends State<SecurityIcon>
     Color iconColor;
 
     if (widget.phishingResult == null) {
-      // Default secure icon
       iconData = Icons.lock_rounded;
       iconColor = widget.defaultColor;
     } else if (widget.phishingResult!.isPhishing) {
-      // Warning icon for phishing
       iconData = Icons.warning_rounded;
       iconColor = _getRiskColor(widget.phishingResult!.riskLevel);
     } else {
-      // Shield icon for verified safe
       iconData = Icons.shield_rounded;
       iconColor = Colors.green;
     }
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: Transform.rotate(
-            angle: _rotationAnimation.value,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: animation,
-                  child: child,
-                );
-              },
-              child: Icon(
-                iconData,
-                key: ValueKey(iconData),
-                size: 18,
-                color: iconColor,
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: MouseRegion(
+        cursor: widget.onTap != null && widget.phishingResult != null
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Transform.scale(
+              scale: _scaleAnimation.value,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(scale: animation, child: child);
+                },
+                child: Icon(
+                  iconData,
+                  key: ValueKey(iconData),
+                  size: 18,
+                  color: iconColor,
+                ),
               ),
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }

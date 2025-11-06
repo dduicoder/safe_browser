@@ -35,39 +35,31 @@ class PhishingWarningDialog extends StatelessWidget {
         color: _getRiskColor(result.riskLevel),
         size: 48,
       ),
-      title: const Text('Potential Phishing Site Detected'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'This site may be attempting to steal your information.',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Risk Level: ${result.riskLevel.toUpperCase()}',
-            style: TextStyle(
-              color: _getRiskColor(result.riskLevel),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Confidence: ${(result.confidence * 100).toStringAsFixed(1)}%',
-            style: TextStyle(color: Colors.grey[700]),
-          ),
-          if (result.reasons.isNotEmpty) ...[
+      title: const Text('피싱 감지 결과'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             const SizedBox(height: 16),
-            const Text(
-              'Reasons:',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            Text(
+              '위험도: ${result.riskLevel.toUpperCase()}',
+              style: TextStyle(
+                color: _getRiskColor(result.riskLevel),
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 8),
-            ...result.reasons.map((reason) => Padding(
+            Text(
+              '확률: ${(result.confidence * 100).toStringAsFixed(1)}%',
+              style: TextStyle(color: Colors.grey[700]),
+            ),
+            if (result.reasons.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('이유:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...result.reasons.map(
+                (reason) => Padding(
                   padding: const EdgeInsets.only(left: 8, bottom: 4),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -76,9 +68,11 @@ class PhishingWarningDialog extends StatelessWidget {
                       Expanded(child: Text(reason)),
                     ],
                   ),
-                )),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -86,13 +80,13 @@ class PhishingWarningDialog extends StatelessWidget {
             Navigator.of(context).pop();
             webViewController?.goBack();
           },
-          child: const Text('Go Back'),
+          child: const Text('돌아가기'),
         ),
         TextButton(
           onPressed: () {
             Navigator.of(context).pop();
           },
-          child: const Text('Continue Anyway'),
+          child: const Text('계속하기'),
         ),
       ],
     );
