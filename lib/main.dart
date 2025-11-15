@@ -48,7 +48,7 @@ class _WebViewPageState extends State<WebViewPage>
   bool isCheckingPhishing = false;
   PhishingResult? phishingResult;
   late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
+  Set<String> approvedDangerousUrls = {}; // URLs user approved to visit
 
   @override
   void initState() {
@@ -58,10 +58,6 @@ class _WebViewPageState extends State<WebViewPage>
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeInOut,
     );
 
     pullToRefreshController = PullToRefreshController(
@@ -95,6 +91,12 @@ class _WebViewPageState extends State<WebViewPage>
   Future<void> checkPageForPhishing(String url) async {
     if (webViewController == null) return;
 
+    // Skip check if user has approved this URL
+    if (approvedDangerousUrls.contains(url)) {
+      print('⚠️ Skipping phishing check for approved URL: $url');
+      return;
+    }
+
     setState(() {
       isCheckingPhishing = true;
       phishingResult = null;
@@ -111,6 +113,17 @@ class _WebViewPageState extends State<WebViewPage>
         isCheckingPhishing = false;
       });
 
+      // Check if this is a dangerous site (happygbs or >5 risk items)
+      if (result.dangerReason != null) {
+        // Show JavaScript overlay on the page
+        await PhishingDetector.showDangerWarningOverlay(
+          webViewController!,
+          result.dangerReason!,
+          result.riskItems,
+        );
+        return;
+      }
+
       if (result.riskItems.isNotEmpty) {
         await PhishingDetector.highlightRiskyElements(
           webViewController!,
@@ -118,19 +131,19 @@ class _WebViewPageState extends State<WebViewPage>
         );
       }
 
-      if (result.isPhishing && mounted) {
-        final riskLevelPriority = {
-          'low': 1,
-          'medium': 2,
-          'high': 3,
-          'critical': 4,
-        };
-        final priority = riskLevelPriority[result.riskLevel.toLowerCase()] ?? 0;
+      // if (result.isPhishing && mounted) {
+      //   final riskLevelPriority = {
+      //     'low': 1,
+      //     'medium': 2,
+      //     'high': 3,
+      //     'critical': 4,
+      //   };
+      //   final priority = riskLevelPriority[result.riskLevel.toLowerCase()] ?? 0;
 
-        if (priority >= 2) {
-          showPhishingWarning(result);
-        }
-      }
+      //   if (priority >= 2) {
+      //     showPhishingWarning(result);
+      //   }
+      // }
     } catch (e) {
       setState(() {
         isCheckingPhishing = false;
@@ -200,57 +213,82 @@ class _WebViewPageState extends State<WebViewPage>
             ),
 
           Expanded(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: InAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri(currentUrl)),
-                pullToRefreshController: pullToRefreshController,
-                initialSettings: InAppWebViewSettings(
-                  useShouldOverrideUrlLoading: true,
-                  mediaPlaybackRequiresUserGesture: false,
-                  javaScriptEnabled: true,
-                  javaScriptCanOpenWindowsAutomatically: true,
-                ),
-                onWebViewCreated: (controller) {
-                  webViewController = controller;
-                  _fadeController.forward();
-                },
-                shouldOverrideUrlLoading: (controller, navigationAction) async {
-                  return NavigationActionPolicy.ALLOW;
-                },
-                onLoadStart: (controller, url) async {
-                  _fadeController.reverse();
-                  setState(() {
-                    loadingProgress = 0;
-                    if (url != null) {
-                      urlController.text = url.toString();
-                    }
-                  });
-                  updateNavigationButtons();
-
-                  await PhishingDetector.clearHighlights(controller);
-                },
-                onLoadStop: (controller, url) async {
-                  setState(() {
-                    loadingProgress = 1.0;
-                  });
-                  _fadeController.forward();
-                  updateNavigationButtons();
-                  pullToRefreshController?.endRefreshing();
-
-                  if (url != null) {
-                    checkPageForPhishing(url.toString());
-                  }
-                },
-                onProgressChanged: (controller, progress) {
-                  setState(() {
-                    loadingProgress = progress / 100;
-                  });
-                },
-                onUpdateVisitedHistory: (controller, url, androidIsReload) {
-                  updateNavigationButtons();
-                },
+            child: InAppWebView(
+              initialUrlRequest: URLRequest(url: WebUri(currentUrl)),
+              pullToRefreshController: pullToRefreshController,
+              initialSettings: InAppWebViewSettings(
+                useShouldOverrideUrlLoading: true,
+                mediaPlaybackRequiresUserGesture: false,
+                javaScriptEnabled: true,
+                javaScriptCanOpenWindowsAutomatically: true,
               ),
+              onWebViewCreated: (controller) {
+                webViewController = controller;
+
+                // Add JavaScript handlers for danger warning buttons
+                controller.addJavaScriptHandler(
+                  handlerName: 'dangerWarningGoBack',
+                  callback: (args) async {
+                    // Remove overlay and go back
+                    await PhishingDetector.removeDangerWarningOverlay(controller);
+                    controller.goBack();
+                  },
+                );
+
+                controller.addJavaScriptHandler(
+                  handlerName: 'dangerWarningContinue',
+                  callback: (args) async {
+                    // Get current URL and add to approved list
+                    final url = await controller.getUrl();
+                    if (url != null) {
+                      approvedDangerousUrls.add(url.toString());
+                    }
+                    // Remove overlay
+                    await PhishingDetector.removeDangerWarningOverlay(controller);
+
+                    // Show highlights for dangerous elements
+                    if (phishingResult != null && phishingResult!.riskItems.isNotEmpty) {
+                      await PhishingDetector.highlightRiskyElements(
+                        controller,
+                        phishingResult!.riskItems,
+                      );
+                    }
+                  },
+                );
+              },
+              shouldOverrideUrlLoading: (controller, navigationAction) async {
+                return NavigationActionPolicy.ALLOW;
+              },
+              onLoadStart: (controller, url) async {
+                setState(() {
+                  loadingProgress = 0;
+                  if (url != null) {
+                    urlController.text = url.toString();
+                  }
+                });
+                updateNavigationButtons();
+
+                await PhishingDetector.clearHighlights(controller);
+              },
+              onLoadStop: (controller, url) async {
+                setState(() {
+                  loadingProgress = 1.0;
+                });
+                updateNavigationButtons();
+                pullToRefreshController?.endRefreshing();
+
+                if (url != null) {
+                  checkPageForPhishing(url.toString());
+                }
+              },
+              onProgressChanged: (controller, progress) {
+                setState(() {
+                  loadingProgress = progress / 100;
+                });
+              },
+              onUpdateVisitedHistory: (controller, url, androidIsReload) {
+                updateNavigationButtons();
+              },
             ),
           ),
         ],
